@@ -1,0 +1,16 @@
+# Security: never commit real config, secrets, tokens or local settings
+config.ps1
+.secrets/
+*.secret
+*.secrets
+*.env
+.env*
+*.pfx
+*.pem
+*.key
+*.publishsettings
+local.settings.json
+*.token
+*.log
+logs/
+.claude/settings.local.json

@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fabric Demo Architecture</title>
+<meta name="description" content="A PowerShell demo that loads an Azure SQL table and a local SQL Server table into a Microsoft Fabric warehouse and enriches them into one reporting table.">
+<meta name="robots" content="index,follow">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one wide flow diagram (sources left, Fabric right), then run order, decisions, cost/cleanup. */
+:root {
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --fg: #16212b;
+  --muted: #5a6875;
+  --line: #c3ccd5;
+  --azure: #1d5fb0;
+  --azure-soft: #e3eefb;
+  --fabric: #0b7a68;
+  --fabric-soft: #def4ef;
+  --local: #9a5b00;
+  --local-soft: #fbefd9;
+  --warn: #b3261e;
+  --font-body: "IBM Plex Sans", system-ui, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181f; --surface: #19232d; --fg: #e6edf3; --muted: #9aa9b7; --line: #34424f;
+    --azure: #6aa7f0; --azure-soft: #172a42; --fabric: #3fc9ae; --fabric-soft: #0f2f2a;
+    --local: #e0a24a; --local-soft: #33260f; --warn: #ff8a80; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181f; --surface: #19232d; --fg: #e6edf3; --muted: #9aa9b7; --line: #34424f;
+  --azure: #6aa7f0; --azure-soft: #172a42; --fabric: #3fc9ae; --fabric-soft: #0f2f2a;
+  --local: #e0a24a; --local-soft: #33260f; --warn: #ff8a80; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--font-body); padding-inline: 16px; padding-block: 32px 56px; }
+main { max-width: 1040px; margin-inline: auto; display: flex; flex-direction: column; gap: 40px; }
+h1 { font-size: 1.9rem; line-height: 1.15; margin: 0 0 8px; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 1.15rem; margin: 0 0 12px; }
+p { margin: 0 0 10px; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 1.05rem; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+.tag { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+figure { margin: 0; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+svg { display: block; min-width: 780px; width: 100%; height: auto; color: var(--fg); font-family: var(--font-body); }
+figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 10px; max-width: 80ch; }
+svg text { fill: var(--fg); font-size: 12.5px; }
+svg .sub { fill: var(--muted); font-size: 11.5px; }
+svg .mono { font-family: var(--font-mono); font-size: 11.5px; }
+svg .lane-t { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+.lane { stroke-width: 1.2; }
+.lane.az { fill: var(--azure-soft); stroke: var(--azure); }
+.lane.lo { fill: var(--local-soft); stroke: var(--local); }
+.lane.fa { fill: var(--fabric-soft); stroke: var(--fabric); }
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.box.az { stroke: var(--azure); } .box.lo { stroke: var(--local); } .box.fa { stroke: var(--fabric); }
+.box.out { stroke: var(--fabric); stroke-width: 2.2; }
+.wh { fill: none; stroke: var(--fabric); stroke-width: 1.2; stroke-dasharray: 2 4; }
+.dash { stroke-dasharray: 6 4; }
+.flow { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.flow.local { stroke: var(--local); }
+.flow.azure { stroke: var(--azure); }
+.flow.fabric { stroke: var(--fabric); }
+.az-t { fill: var(--azure) !important; } .lo-t { fill: var(--local) !important; } .fa-t { fill: var(--fabric) !important; }
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.cols > div { min-width: 0; }
+.note { border-left: 3px solid var(--line); padding-left: 14px; }
+.note.az { border-color: var(--azure); } .note.fa { border-color: var(--fabric); } .note.lo { border-color: var(--local); }
+.note h3 { margin: 0 0 4px; font-size: 0.98rem; }
+.note p { color: var(--muted); font-size: 0.93rem; margin: 0; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td:first-child { font-family: var(--font-mono); font-size: 0.85rem; white-space: nowrap; }
+.pill { font-size: 0.72rem; font-family: var(--font-mono); padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+:focus-visible { outline: 2px solid var(--azure); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="tag">Fabric_Test1 · PowerShell demo</div>
+  <h1>Two customer tables, one reporting table</h1>
+  <p class="lede">A customer from Azure SQL (1, Jansen, A) and a customer from the local Win10 SQL Server (1, Pietersen, B) are loaded into a Fabric warehouse, enriched with T-SQL, and published as <code>dwh.Customers</code>. Every step is a script; one cleanup removes it all.</p>
+</header>
+
+<section>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1000 400" role="img" aria-label="Data flow: Azure SQL and the local SQL Server are copied by a Fabric pipeline into two staging tables in the warehouse, a T-SQL step enriches and unions them into dwh.Customers.">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- lanes -->
+      <rect class="lane az" x="20" y="20" width="240" height="140" rx="4"/>
+      <text class="lane-t az-t" x="34" y="42">AZURE · OPENDATA.NL TENANT</text>
+      <rect class="lane lo" x="20" y="180" width="240" height="200" rx="4"/>
+      <text class="lane-t lo-t" x="34" y="202">YOUR WIN10 PC</text>
+      <rect class="lane fa" x="310" y="20" width="670" height="360" rx="4"/>
+      <text class="lane-t fa-t" x="324" y="42">FABRIC · ONMICROSOFT.COM TENANT · TRIAL CAPACITY</text>
+
+      <!-- sources -->
+      <rect class="box az" x="40" y="62" width="200" height="76" rx="3"/>
+      <text x="54" y="84" font-weight="600">Azure SQL db1</text>
+      <text class="mono" x="54" y="103">dbo.Customer</text>
+      <text class="sub" x="54" y="122">1 · Jansen · A</text>
+
+      <rect class="box lo" x="40" y="222" width="200" height="76" rx="3"/>
+      <text x="54" y="244" font-weight="600">SQL Server 2025 db1</text>
+      <text class="mono" x="54" y="263">dbo.Customer</text>
+      <text class="sub" x="54" y="282">1 · Pietersen · B</text>
+
+      <rect class="box lo dash" x="40" y="320" width="200" height="40" rx="3"/>
+      <text x="54" y="338" font-weight="600">On-prem data gateway</text>
+      <text class="sub" x="54" y="352">one-time setup in the portal</text>
+
+      <!-- pipeline -->
+      <rect class="box fa dash" x="340" y="170" width="170" height="80" rx="3"/>
+      <text x="354" y="194" font-weight="600">Pipeline</text>
+      <text class="mono" x="354" y="212">pl_load_customers</text>
+      <text class="sub" x="354" y="232">Copy activity: local only</text>
+
+      <!-- warehouse -->
+      <rect class="wh" x="560" y="56" width="400" height="308" rx="4"/>
+      <text class="lane-t fa-t" x="574" y="78">WAREHOUSE db1</text>
+
+      <rect class="box fa" x="580" y="98" width="170" height="52" rx="3"/>
+      <text class="mono" x="594" y="120">stg.Customer_Azure</text>
+      <text class="sub" x="594" y="138">truncated, then loaded</text>
+
+      <rect class="box lo dash" x="580" y="250" width="170" height="52" rx="3"/>
+      <text class="mono" x="594" y="272">stg.Customer_Local</text>
+      <text class="sub" x="594" y="290">empty until gateway is set</text>
+
+      <rect class="box fa" x="780" y="156" width="165" height="76" rx="3"/>
+      <text x="794" y="178" font-weight="600">Enrich (T-SQL)</text>
+      <text class="sub" x="794" y="196">union both sources,</text>
+      <text class="sub" x="794" y="211">key, full name, load date</text>
+
+      <rect class="box out" x="780" y="288" width="165" height="52" rx="3"/>
+      <text class="mono" x="794" y="310" font-weight="500">dwh.Customers</text>
+      <text class="sub" x="794" y="328">for reporting</text>
+
+      <!-- flows -->
+      <path class="flow azure" d="M240,124 H580" marker-end="url(#arrow)"/>
+      <text class="sub" x="322" y="116">script reads, then inserts</text>
+
+      <path class="flow local dash" d="M240,340 H290 V226 H340" marker-end="url(#arrow)"/>
+      <path class="flow local" d="M140,298 V320" marker-end="url(#arrow)"/>
+      <text class="sub" x="150" y="313">read</text>
+
+      <path class="flow fabric dash" d="M510,225 H535 V276 H580" marker-end="url(#arrow)"/>
+
+      <path class="flow" d="M750,124 H765 V180 H780" marker-end="url(#arrow)"/>
+      <path class="flow dash" d="M750,276 H765 V208 H780" marker-end="url(#arrow)"/>
+      <path class="flow" d="M862,232 V288" marker-end="url(#arrow)"/>
+      <text class="sub" x="872" y="265">insert … select</text>
+    </svg>
+    </div>
+    <figcaption>Dashed boxes and arrows mark the optional local path. It needs a gateway connection created once in the Fabric portal; until then the run loads only the Azure customer and <code>dwh.Customers</code> holds one row instead of two.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>What each part does</h2>
+  <div class="cols">
+    <div class="note az">
+      <h3>Azure SQL (opendata.nl)</h3>
+      <p>Serverless General Purpose, 0.5 vCore minimum, pauses after 60 minutes idle. Scripts reach it with your Entra token; the read-only login <code>fabric_reader</code> is kept for a future Fabric connection.</p>
+    </div>
+    <div class="note lo">
+      <h3>Local SQL Server</h3>
+      <p>Already installed on this PC. Fabric cannot reach it from the cloud, so the gateway relays the copy over an outbound connection. No inbound firewall change.</p>
+    </div>
+    <div class="note fa">
+      <h3>Loading the staging tables</h3>
+      <p>The Azure row is read by the script and inserted into the warehouse. A warehouse COPY cannot read Azure SQL directly without a staging store, which is too much for one row. The local table goes through a pipeline and the gateway. Both loads truncate first, so a rerun never duplicates rows.</p>
+    </div>
+    <div class="note fa">
+      <h3>Warehouse db1</h3>
+      <p>Schemas <code>stg</code> (raw copies) and <code>dwh</code> (reporting). Both sources use CustomerId 1, so enrichment adds a surrogate <code>CustomerKey</code> and a <code>SourceSystem</code> column.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Run order</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Script</th><th>What it does</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr><td>00-Prereq</td><td>Checks logins, tools, capacity and the local SQL Server. Read-only.</td><td><span class="pill">none</span></td></tr>
+        <tr><td>01-Azure</td><td>Resource group, SQL server, <code>db1</code>, <code>dbo.Customer</code> row, read-only login.</td><td><span class="pill warn">starts billing</span></td></tr>
+        <tr><td>02-Local</td><td>Local <code>db1.dbo.Customer</code> with Pietersen.</td><td><span class="pill">none</span></td></tr>
+        <tr><td>03-Fabric</td><td>Workspace on the trial capacity, warehouse (and an Azure SQL connection, currently unused).</td><td><span class="pill">trial</span></td></tr>
+        <tr><td>04-Load</td><td>Staging tables, load the Azure row, and run the local pipeline when a gateway connection is set.</td><td><span class="pill">trial</span></td></tr>
+        <tr><td>05-Transform</td><td>Runs <code>05-Transform.sql</code>: union, enrich, full reload of <code>dwh.Customers</code>.</td><td><span class="pill">trial</span></td></tr>
+        <tr><td>06-Verify</td><td>Reads <code>dwh.Customers</code> and checks the row count.</td><td><span class="pill">trial</span></td></tr>
+        <tr><td>99-Cleanup</td><td>Deletes workspace, connection and resource group. <code>-DropLocal</code> also drops the local db1.</td><td><span class="pill">stops billing</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Decisions you inherit</h2>
+  <div class="cols">
+    <div class="note">
+      <h3>No mirroring</h3>
+      <p>Mirroring needs the SQL server's managed identity to be a member of the Fabric workspace. Azure sits in the opendata.nl tenant and Fabric in onmicrosoft.com, so Fabric cannot find that identity. Reading with a token from the script works across tenants.</p>
+    </div>
+    <div class="note">
+      <h3>Two logins</h3>
+      <p>Azure calls use the opendata.nl account. Fabric calls use the tenant-level account for onmicrosoft.com, selected by tenant id so az does not pick the wrong cached token.</p>
+    </div>
+    <div class="note">
+      <h3>Germany West Central</h3>
+      <p>West and North Europe refused new SQL servers on this subscription. The region does not matter to Fabric.</p>
+    </div>
+    <div class="note">
+      <h3>Secrets</h3>
+      <p>Generated passwords live only in <code>.secrets/state.json</code>. That folder and <code>config.ps1</code> are in <code>.gitignore</code>.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+</body>
+</html>
