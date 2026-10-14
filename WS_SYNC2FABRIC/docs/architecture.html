@@ -124,15 +124,15 @@ td:first-child { font-family: var(--font-mono); font-size: 0.85rem; white-space:
       <text class="mono" x="54" y="263">dbo.Customer</text>
       <text class="sub" x="54" y="282">1 · Pietersen · B</text>
 
-      <rect class="box lo dash" x="40" y="320" width="200" height="40" rx="3"/>
+      <rect class="box lo" x="40" y="320" width="200" height="40" rx="3"/>
       <text x="54" y="338" font-weight="600">On-prem data gateway</text>
-      <text class="sub" x="54" y="352">one-time setup in the portal</text>
+      <text class="sub" x="54" y="352">gw-fabricdemo · SQL login</text>
 
       <!-- pipeline -->
-      <rect class="box fa dash" x="340" y="170" width="170" height="80" rx="3"/>
+      <rect class="box fa" x="340" y="170" width="170" height="80" rx="3"/>
       <text x="354" y="194" font-weight="600">Pipeline</text>
       <text class="mono" x="354" y="212">pl_load_customers</text>
-      <text class="sub" x="354" y="232">Copy activity: local only</text>
+      <text class="sub" x="354" y="232">Copy with staging, local only</text>
 
       <!-- warehouse -->
       <rect class="wh" x="560" y="56" width="400" height="308" rx="4"/>
@@ -142,9 +142,9 @@ td:first-child { font-family: var(--font-mono); font-size: 0.85rem; white-space:
       <text class="mono" x="594" y="120">stg.Customer_Azure</text>
       <text class="sub" x="594" y="138">truncated, then loaded</text>
 
-      <rect class="box lo dash" x="580" y="250" width="170" height="52" rx="3"/>
+      <rect class="box lo" x="580" y="250" width="170" height="52" rx="3"/>
       <text class="mono" x="594" y="272">stg.Customer_Local</text>
-      <text class="sub" x="594" y="290">empty until gateway is set</text>
+      <text class="sub" x="594" y="290">loaded by the pipeline</text>
 
       <rect class="box fa" x="780" y="156" width="165" height="76" rx="3"/>
       <text x="794" y="178" font-weight="600">Enrich (T-SQL)</text>
@@ -159,19 +159,19 @@ td:first-child { font-family: var(--font-mono); font-size: 0.85rem; white-space:
       <path class="flow azure" d="M240,124 H580" marker-end="url(#arrow)"/>
       <text class="sub" x="322" y="116">script reads, then inserts</text>
 
-      <path class="flow local dash" d="M240,340 H290 V226 H340" marker-end="url(#arrow)"/>
+      <path class="flow local" d="M240,340 H290 V226 H340" marker-end="url(#arrow)"/>
       <path class="flow local" d="M140,298 V320" marker-end="url(#arrow)"/>
       <text class="sub" x="150" y="313">read</text>
 
-      <path class="flow fabric dash" d="M510,225 H535 V276 H580" marker-end="url(#arrow)"/>
+      <path class="flow fabric" d="M510,225 H535 V276 H580" marker-end="url(#arrow)"/>
 
       <path class="flow" d="M750,124 H765 V180 H780" marker-end="url(#arrow)"/>
-      <path class="flow dash" d="M750,276 H765 V208 H780" marker-end="url(#arrow)"/>
+      <path class="flow" d="M750,276 H765 V208 H780" marker-end="url(#arrow)"/>
       <path class="flow" d="M862,232 V288" marker-end="url(#arrow)"/>
       <text class="sub" x="872" y="265">insert … select</text>
     </svg>
     </div>
-    <figcaption>Dashed boxes and arrows mark the optional local path. It needs a gateway connection created once in the Fabric portal; until then the run loads only the Azure customer and <code>dwh.Customers</code> holds one row instead of two.</figcaption>
+    <figcaption>Both paths run end to end: <code>dwh.Customers</code> holds two rows (verified 2026-10-14). The local path needs a gateway and a gateway connection created once in the Fabric portal; without <code>LocalConnectionId</code> the run loads only the Azure customer and <code>dwh.Customers</code> holds one row. Details of an actual run are in <a href="architecture_detail.html">architecture_detail.html</a>.</figcaption>
   </figure>
 </section>
 
@@ -184,11 +184,11 @@ td:first-child { font-family: var(--font-mono); font-size: 0.85rem; white-space:
     </div>
     <div class="note lo">
       <h3>Local SQL Server</h3>
-      <p>Already installed on this PC. Fabric cannot reach it from the cloud, so the gateway relays the copy over an outbound connection. No inbound firewall change.</p>
+      <p>Already installed on this PC. Fabric cannot reach it from the cloud, so the gateway relays the copy over an outbound connection. No inbound firewall change. The gateway signs in with the read-only SQL login <code>fabric_local_user</code>; Windows authentication failed to impersonate the user here.</p>
     </div>
     <div class="note fa">
       <h3>Loading the staging tables</h3>
-      <p>The Azure row is read by the script and inserted into the warehouse. A warehouse COPY cannot read Azure SQL directly without a staging store, which is too much for one row. The local table goes through a pipeline and the gateway. Both loads truncate first, so a rerun never duplicates rows.</p>
+      <p>The Azure row is read by the script and inserted into the warehouse. A warehouse COPY cannot read Azure SQL directly without a staging store, which is too much for one row. The local table goes through a pipeline and the gateway, with staging enabled because the warehouse COPY command cannot read a SQL Server source directly. Both loads truncate first, so a rerun never duplicates rows.</p>
     </div>
     <div class="note fa">
       <h3>Warehouse db1</h3>
@@ -205,7 +205,7 @@ td:first-child { font-family: var(--font-mono); font-size: 0.85rem; white-space:
       <tbody>
         <tr><td>00-Prereq</td><td>Checks logins, tools, capacity and the local SQL Server. Read-only.</td><td><span class="pill">none</span></td></tr>
         <tr><td>01-Azure</td><td>Resource group, SQL server, <code>db1</code>, <code>dbo.Customer</code> row, read-only login.</td><td><span class="pill warn">starts billing</span></td></tr>
-        <tr><td>02-Local</td><td>Local <code>db1.dbo.Customer</code> with Pietersen.</td><td><span class="pill">none</span></td></tr>
+        <tr><td>02-Local</td><td>Local <code>db1.dbo.Customer</code> with Pietersen, and the read-only SQL login <code>fabric_local_user</code> for the gateway.</td><td><span class="pill">none</span></td></tr>
         <tr><td>03-Fabric</td><td>Workspace on the trial capacity, warehouse (and an Azure SQL connection, currently unused).</td><td><span class="pill">trial</span></td></tr>
         <tr><td>04-Load</td><td>Staging tables, load the Azure row, and run the local pipeline when a gateway connection is set.</td><td><span class="pill">trial</span></td></tr>
         <tr><td>05-Transform</td><td>Runs <code>05-Transform.sql</code>: union, enrich, full reload of <code>dwh.Customers</code>.</td><td><span class="pill">trial</span></td></tr>

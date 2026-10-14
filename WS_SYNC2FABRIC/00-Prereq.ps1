@@ -11,6 +11,8 @@ Write-Host '== 00 Prereq =='
 # az CLI is used for Azure resources and for fetching Entra tokens; SqlServer module provides Invoke-Sqlcmd.
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) { throw 'Azure CLI (az) not found.' }
 if (-not (Get-Module -ListAvailable SqlServer)) { throw 'Install-Module SqlServer' }
+Write-LogValue 'az executable' $global:FabricDemoAz
+Write-LogValue 'SqlServer module version' ((Get-Module -ListAvailable SqlServer | Select-Object -First 1).Version.ToString())
 
 # --- Azure login and subscription ---
 # 'az account show' fails when there is no cached login; stdout is discarded, stderr is silenced.
@@ -33,9 +35,10 @@ if (-not $Cfg.LocalConnectionId)  { Write-Warning 'LocalConnectionId empty: step
 $cap = (Invoke-Fabric -Path '/capacities').value | Where-Object displayName -eq $Cfg.FabricCapacityName
 if (-not $cap) { throw "Fabric capacity '$($Cfg.FabricCapacityName)' not visible to you." }
 Write-Host "Capacity     : $($cap.displayName) ($($cap.sku), $($cap.state))"
+Write-LogValue 'capacity' $cap
 
 # --- Local SQL Server ---
 # Connectivity test against the on-premises instance (the source for the local copy);
 # prints only the first line of @@VERSION.
-Invoke-Sqlcmd -ServerInstance $Cfg.LocalSqlInstance -Query 'SELECT @@VERSION AS v' -TrustServerCertificate | Select-Object -ExpandProperty v | Select-Object -First 1
+Invoke-LocalSql -Query 'SELECT @@VERSION AS v' | Select-Object -ExpandProperty v | Select-Object -First 1
 Write-Host 'Prereq OK'

@@ -15,6 +15,8 @@ $Cfg = @{
     WarehouseName      = 'db1'
 
     # One-time manual: connection (via on-prem data gateway) to local SQL, create in Fabric portal
-    # Manage connections and gateways > New > On-premises > SQL Server. Paste its GUID here.
+    # Manage connections and gateways > Connections > New > On-premises > SQL Server, server localhost,
+    # authentication Basic with user fabric_local_user (created by 02-Local.ps1; password in .secrets/state.json).
+    # Paste the connection GUID here. See README "Local source via gateway".
     LocalConnectionId  = ''
 }

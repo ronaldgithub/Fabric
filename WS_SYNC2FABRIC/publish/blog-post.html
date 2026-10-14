@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is automating Fabric easy</title>
+<style>
+/* Preview of the post. For WordPress: copy everything inside <article> and upload the two PNG files to the media library. */
+:root { --bg:#ffffff; --fg:#16212b; --muted:#5a6875; --line:#c3ccd5; --code:#f1f4f7; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#11181f; --fg:#e6edf3; --muted:#9aa9b7; --line:#34424f; --code:#19232d; color-scheme: dark; } }
+body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.65 system-ui,"Segoe UI",sans-serif; padding:32px 16px 64px; }
+article { max-width:760px; margin-inline:auto; }
+h1 { font-size:2rem; line-height:1.2; margin:0 0 20px; text-wrap:balance; }
+h2 { font-size:1.35rem; margin:40px 0 10px; }
+p, li { max-width:68ch; }
+figure { margin:28px 0; }
+figure img { display:block; width:100%; height:auto; border:1px solid var(--line); border-radius:6px; }
+figcaption { color:var(--muted); font-size:0.9rem; margin-top:8px; }
+code { font-family:ui-monospace,Consolas,monospace; font-size:0.88em; background:var(--code); padding:1px 5px; border-radius:3px; }
+table { border-collapse:collapse; width:100%; margin:16px 0; font-size:0.95rem; }
+th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--muted); font-size:0.78rem; letter-spacing:0.05em; text-transform:uppercase; }
+.lead { font-size:1.15rem; }
+.muted { color:var(--muted); }
+</style>
+</head>
+<body>
+<article>
+
+<h1>Is automating Microsoft Fabric easy?</h1>
+
+<p class="lead">Is Fabric easy? I don't know, because I didn't do the exams.<br>
+Is <em>automating</em> Fabric easy? Let's find out.</p>
+
+<figure>
+  <img src="../pictures/01_is_fabric_easy.png" alt="The project folder in VS Code: the architecture pages and one verbose log file per run.">
+  <figcaption>The project in VS Code: scripts, one verbose log per run, and the architecture pages.</figcaption>
+</figure>
+
+<figure>
+  <img src="blog-architecture.png" alt="Architecture: Azure SQL and a local SQL Server are loaded into two staging tables in a Fabric warehouse and enriched into dwh.Customers.">
+  <figcaption>The whole demo on one page: two sources on the left, a Fabric warehouse on the right.</figcaption>
+</figure>
+
+<h2>The scenario</h2>
+<p>A common situation: some data sits in a local, on-premises SQL Server, other data in an Azure SQL Database. You want all of it in one Fabric Data Warehouse.</p>
+<p>The obvious answer for the Azure part is mirroring. In my case that is not possible: my Azure subscription and my Fabric tenant are different tenants, and mirroring is not supported between different tenants. So it has to be a plain load.</p>
+<p>My test data is tiny on purpose: one customer in Azure SQL (<code>1, Jansen, A</code>) and one in the local SQL Server (<code>1, Pietersen, B</code>). Both even have customer id 1, so the warehouse has to give them a key of its own. The goal is one table, <code>dwh.Customers</code>, with both rows, a full name and a load date.</p>
+
+<h2>One script per step</h2>
+<p>I wanted it repeatable: build everything, look at it, remove everything. Plain PowerShell with the Azure CLI and the Fabric REST API, no extra modules. Every step is idempotent, so you can run it again without making a mess.</p>
+<table>
+  <thead><tr><th>Step</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>00</code> Prereq</td><td>Checks logins, tools, capacity and the local SQL Server (read-only)</td></tr>
+    <tr><td><code>01</code> Azure</td><td>Resource group, SQL server, database, sample row</td></tr>
+    <tr><td><code>02</code> Local</td><td>Local database, table, sample row, read-only login</td></tr>
+    <tr><td><code>03</code> Fabric</td><td>Workspace on the trial capacity, warehouse</td></tr>
+    <tr><td><code>04</code> Load</td><td>Staging tables; Azure row by script, local row by a pipeline</td></tr>
+    <tr><td><code>05</code> Transform</td><td>T-SQL: union, key, full name, load date into <code>dwh.Customers</code></td></tr>
+    <tr><td><code>06</code> Verify</td><td>Counts the rows</td></tr>
+    <tr><td><code>99</code> Cleanup</td><td>Deletes workspace, connection and resource group</td></tr>
+  </tbody>
+</table>
+<p>The Azure row is read by the script and inserted into the warehouse; for one row that is simpler than a pipeline. The local row takes the proper road: a Fabric pipeline, through an on-premises data gateway.</p>
+
+<h2>What actually happens, in order</h2>
+<p>I added a very verbose log to the scripts: every command, every REST call and every SQL statement, with the script and line number that did it. This is the run, drawn from that log.</p>
+
+<figure>
+  <img src="blog-architecture-detail.png" alt="Sequence diagram of the run: PowerShell scripts talking to the local SQL Server, az and Entra ID, Azure SQL and Fabric, in 17 numbered steps.">
+  <figcaption>17 interactions across the steps. Not drawn: about 18 token requests to the Azure CLI, one second each.</figcaption>
+</figure>
+
+<p>A few things I only noticed because of the log:</p>
+<ul>
+  <li>Two identities are in play: the account for Azure and the account for Fabric. The CLI has to be told which one to use for each token.</li>
+  <li>Creating the workspace and the warehouse is quick, but the warehouse is a long-running operation: about 20 seconds of polling.</li>
+  <li>Reading the Azure table takes 0.03 seconds. The pipeline for the same amount of data (one row) takes 61 seconds. The data is not the cost; the pipeline, the gateway hop and staging are.</li>
+  <li>The whole run, without the pipeline, takes under two minutes.</li>
+</ul>
+
+<h2>What went wrong (the honest part)</h2>
+<p>The local copy did not work the first time. It took five failed pipeline runs, with three different causes:</p>
+<ol>
+  <li><strong>The warehouse refuses the source.</strong> <em>"DataWarehouse Copy Command doesn't support 'Source connector type' as 'SqlServer'."</em> The warehouse loads with a COPY command, which cannot read a SQL Server directly. Fix: enable staging in the copy activity.</li>
+  <li><strong>The gateway cannot become me.</strong> <em>"The gateway's service account failed to impersonate the user."</em> Windows authentication through the gateway did not work on this PC. Fix: a small read-only SQL login on the local server.</li>
+  <li><strong>A user name that did not match.</strong> The connection still held another login name than the one I had created. The error is plain "login failed", so you have to read it twice. Fix: make the two names equal.</li>
+</ol>
+<p>One more, earlier: the serverless Azure SQL database had auto-paused. Waking it up takes longer than the default 15-second connection timeout, so the first query failed with a login timeout. A longer timeout and a retry fixed that.</p>
+
+<h2>The result</h2>
+<p>After the fixes, both rows land in the warehouse:</p>
+<table>
+  <thead><tr><th>CustomerKey</th><th>SourceSystem</th><th>SourceId</th><th>LastName</th><th>Initials</th><th>FullName</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>AzureSQL</td><td>1</td><td>Jansen</td><td>A</td><td>A. Jansen</td></tr>
+    <tr><td>2</td><td>LocalSQL</td><td>1</td><td>Pietersen</td><td>B</td><td>B. Pietersen</td></tr>
+  </tbody>
+</table>
+<p>One thing that tripped me up at the end: I looked in the <code>dbo</code> schema and saw nothing. The data lives in <code>stg</code> (raw copies) and <code>dwh</code> (the enriched table). Nothing wrote to <code>dbo</code>.</p>
+<p>Cost: a serverless Azure SQL database that pauses itself, plus an existing Fabric trial capacity. A few cents per run, and one cleanup command removes it all.</p>
+
+<h2>So, is it easy?</h2>
+<p>Automating Fabric itself is not hard: the REST API and the Azure CLI do what the portal does, and every item can be created idempotently. The hard parts were everything around it: two tenants, two sets of tokens, a gateway, and the exact error message of a copy command.</p>
+<p>Not everything is automated yet. Installing the gateway and creating its connection are still manual steps in the portal; I did not script those. And a pipeline for one row is a lot of machinery. For a real load you would think about staging, scheduling and incremental loads.</p>
+<p class="muted">Next time: scheduling, and loading more than one row.</p>
+
+</article>
+</body>
+</html>

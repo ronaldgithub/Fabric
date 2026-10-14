@@ -4,6 +4,7 @@
 # Load shared config ($Cfg) and helpers (Invoke-Fabric, Get-FabricItemByName, Get-State/Set-State)
 . "$PSScriptRoot\common.ps1"
 Write-Host '== 03 Fabric =='
+
 # Step 01 stores the Azure SQL server name and the fabric_reader password in the state file; we need both below.
 $state = Get-State
 if (-not $state.sqlFqdn) { throw 'Run 01-Azure.ps1 first.' }
@@ -11,10 +12,12 @@ if (-not $state.sqlFqdn) { throw 'Run 01-Azure.ps1 first.' }
 # --- Workspace + capacity ---
 # Look the workspace up by name first, so a re-run reuses it instead of creating a duplicate.
 $ws = Get-FabricItemByName '/workspaces' $Cfg.WorkspaceName
+Write-Log -Kind DECIDE "workspace '$($Cfg.WorkspaceName)': $(if ($ws) { "exists id=$($ws.id), reuse" } else { 'missing, create' })"
 if (-not $ws) { $ws = Invoke-Fabric POST '/workspaces' @{ displayName = $Cfg.WorkspaceName } }
 # A new workspace has no compute; assign it to the existing (trial) capacity so items can be created in it.
 # Repeating the assignment is harmless.
 $cap = (Invoke-Fabric -Path '/capacities').value | Where-Object displayName -eq $Cfg.FabricCapacityName
+Write-LogValue "capacity '$($Cfg.FabricCapacityName)'" $cap
 Invoke-Fabric POST "/workspaces/$($ws.id)/assignToCapacity" @{ capacityId = $cap.id } | Out-Null
 # Save the workspace id for later steps and for cleanup.
 Set-State 'workspaceId' $ws.id
@@ -23,6 +26,7 @@ Write-Host "Workspace $($ws.displayName) $($ws.id)"
 # --- Cloud connection to Azure SQL ---
 # SQL login with read-only rights; works across tenants (Azure and Fabric are in different tenants,
 # so Entra single sign-on is not an option). Created once; the id in the state file marks it as done.
+Write-Log -Kind DECIDE "azureConnId in state: $(if ($state.azureConnId) { "$($state.azureConnId), skip create" } else { 'none, create connection' })"
 if (-not $state.azureConnId) {
     $conn = Invoke-Fabric POST '/connections' @{
         displayName       = "conn-$($Cfg.ResourceGroup)-azuresql"
@@ -45,6 +49,7 @@ if (-not $state.azureConnId) {
 # --- Warehouse ---
 # Create the warehouse only if it is not there yet. The create call returns no item, so look it up again afterwards.
 $wh = Get-FabricItemByName "/workspaces/$($ws.id)/warehouses" $Cfg.WarehouseName
+Write-Log -Kind DECIDE "warehouse '$($Cfg.WarehouseName)': $(if ($wh) { "exists id=$($wh.id)" } else { 'missing, create' })"
 if (-not $wh) {
     Invoke-Fabric POST "/workspaces/$($ws.id)/warehouses" @{ displayName = $Cfg.WarehouseName } | Out-Null
     $wh = Get-FabricItemByName "/workspaces/$($ws.id)/warehouses" $Cfg.WarehouseName
@@ -52,6 +57,7 @@ if (-not $wh) {
 # The list result lacks the SQL endpoint, so fetch the full item to get its connection string.
 $whd = Invoke-Fabric -Path "/workspaces/$($ws.id)/warehouses/$($wh.id)"
 # Save the ids and the SQL endpoint; later steps connect to the warehouse with Invoke-Sqlcmd through it.
+Write-LogValue 'warehouse (full item)' $whd
 Set-State 'warehouseId' $wh.id
 Set-State 'warehouseServer' $whd.properties.connectionString
 Write-Host "Warehouse $($Cfg.WarehouseName) at $($whd.properties.connectionString)"

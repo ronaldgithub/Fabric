@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fabric Demo Detail</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: run facts, one sequence diagram (who talks to whom, in order), then tables built from the run log. */
+:root {
+  --bg: #f5f7f9;
+  --surface: #ffffff;
+  --fg: #16212b;
+  --muted: #5a6875;
+  --line: #c3ccd5;
+  --azure: #1d5fb0;
+  --azure-soft: #e3eefb;
+  --fabric: #0b7a68;
+  --fabric-soft: #def4ef;
+  --local: #9a5b00;
+  --local-soft: #fbefd9;
+  --warn: #b3261e;
+  --font-body: "IBM Plex Sans", system-ui, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11181f; --surface: #19232d; --fg: #e6edf3; --muted: #9aa9b7; --line: #34424f;
+    --azure: #6aa7f0; --azure-soft: #172a42; --fabric: #3fc9ae; --fabric-soft: #0f2f2a;
+    --local: #e0a24a; --local-soft: #33260f; --warn: #ff8a80; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11181f; --surface: #19232d; --fg: #e6edf3; --muted: #9aa9b7; --line: #34424f;
+  --azure: #6aa7f0; --azure-soft: #172a42; --fabric: #3fc9ae; --fabric-soft: #0f2f2a;
+  --local: #e0a24a; --local-soft: #33260f; --warn: #ff8a80; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--font-body); padding-inline: 16px; padding-block: 32px 56px; }
+main { max-width: 1100px; margin-inline: auto; display: flex; flex-direction: column; gap: 40px; }
+h1 { font-size: 1.9rem; line-height: 1.15; margin: 0 0 8px; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 1.15rem; margin: 0 0 12px; }
+p { margin: 0 0 10px; max-width: 72ch; }
+.lede { color: var(--muted); font-size: 1.05rem; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+.tag { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 18px; }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; }
+.fact b { display: block; font-size: 1.35rem; line-height: 1.2; }
+.fact span { color: var(--muted); font-size: 0.82rem; }
+.fact.ok b { color: var(--fabric); }
+
+figure { margin: 0; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+svg { display: block; min-width: 860px; width: 100%; height: auto; color: var(--fg); font-family: var(--font-body); }
+figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 10px; max-width: 84ch; }
+svg text { fill: var(--fg); font-size: 12px; }
+svg .sub { fill: var(--muted); font-size: 11px; }
+svg .num { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+svg .halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+svg .head { font-size: 12px; font-weight: 600; }
+.band { fill: var(--bg); stroke: var(--line); stroke-width: 1; }
+.band-t { font-family: var(--font-mono); font-size: 11px; font-weight: 500; fill: var(--muted); }
+.life { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 5; }
+.col { stroke-width: 1.4; fill: var(--surface); }
+.col.ps { stroke: var(--fg); } .col.lo { stroke: var(--local); fill: var(--local-soft); }
+.col.az { stroke: var(--azure); fill: var(--azure-soft); } .col.fa { stroke: var(--fabric); fill: var(--fabric-soft); }
+.col.id { stroke: var(--muted); }
+.flow { fill: none; stroke: var(--muted); stroke-width: 1.5; }
+.flow.local { stroke: var(--local); } .flow.azure { stroke: var(--azure); } .flow.fabric { stroke: var(--fabric); }
+.dash { stroke-dasharray: 6 4; }
+
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+.cols > div { min-width: 0; }
+.note { border-left: 3px solid var(--line); padding-left: 14px; }
+.note.az { border-color: var(--azure); } .note.fa { border-color: var(--fabric); } .note.lo { border-color: var(--local); } .note.warn { border-color: var(--warn); }
+.note h3 { margin: 0 0 4px; font-size: 0.98rem; }
+.note p { color: var(--muted); font-size: 0.93rem; margin: 0; }
+
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 0.9rem; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td.loc { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; color: var(--muted); }
+tr.step td { background: var(--bg); font-weight: 600; font-size: 0.85rem; }
+.pill { font-size: 0.72rem; font-family: var(--font-mono); padding: 1px 7px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.pill.ok { color: var(--fabric); border-color: var(--fabric); }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+:focus-visible { outline: 2px solid var(--azure); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="tag">Fabric_Test1 · detail from run logs · 2026-10-14</div>
+  <h1>What a run actually did</h1>
+  <p class="lede">Built from the verbose logs of two runs: steps 00 to 03 from a full <code>Run-All.ps1</code> run (10:22, no gateway connection yet), and steps 04 to 06 from a re-run (11:32) after the gateway connection existed. Every <code>az</code> command, Fabric REST call and SQL statement, in order, with the script and line that issued it. The overview of the design is in <a href="architecture.html">architecture.html</a>.</p>
+  <div class="facts">
+    <div class="fact ok"><b>Verify OK</b><span>dwh.Customers: 2 rows (expected 2)</span></div>
+    <div class="fact"><b>80 s + 82 s</b><span>steps 00-03, then steps 04-06</span></div>
+    <div class="fact"><b>61 s</b><span>local pipeline run, Completed</span></div>
+    <div class="fact"><b>18</b><span>token requests in the first run</span></div>
+    <div class="fact"><b>5</b><span>failed pipeline runs on the way, 3 causes (see below)</span></div>
+  </div>
+</header>
+
+<section>
+  <h2>Sequence of the run</h2>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1000 848" role="img" aria-label="Sequence diagram of the run. The PowerShell scripts call az and Entra, the local SQL Server, Azure SQL and the Fabric API and warehouse, in 17 numbered interactions across steps 00 to 06, including the local copy through the gateway.">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- participants and lifelines -->
+      <rect class="col ps" x="35" y="12" width="150" height="44" rx="4"/>
+      <text class="head" x="110" y="31" text-anchor="middle">PowerShell scripts</text>
+      <text class="sub" x="110" y="46" text-anchor="middle">Run-All + 00..06</text>
+      <rect class="col lo" x="225" y="12" width="150" height="44" rx="4"/>
+      <text class="head" x="300" y="31" text-anchor="middle">Local SQL Server</text>
+      <text class="sub" x="300" y="46" text-anchor="middle">localhost · db1</text>
+      <rect class="col id" x="415" y="12" width="150" height="44" rx="4"/>
+      <text class="head" x="490" y="31" text-anchor="middle">az CLI · Entra ID</text>
+      <text class="sub" x="490" y="46" text-anchor="middle">2 accounts, 2 tenants</text>
+      <rect class="col az" x="615" y="12" width="150" height="44" rx="4"/>
+      <text class="head" x="690" y="31" text-anchor="middle">Azure (opendata.nl)</text>
+      <text class="sub" x="690" y="46" text-anchor="middle">SQL server · db1</text>
+      <rect class="col fa" x="815" y="12" width="150" height="44" rx="4"/>
+      <text class="head" x="890" y="31" text-anchor="middle">Fabric (onmicrosoft.com)</text>
+      <text class="sub" x="890" y="46" text-anchor="middle">API · warehouse db1</text>
+      <line class="life" x1="110" y1="56" x2="110" y2="834"/>
+      <line class="life" x1="300" y1="56" x2="300" y2="834"/>
+      <line class="life" x1="490" y1="56" x2="490" y2="834"/>
+      <line class="life" x1="690" y1="56" x2="690" y2="834"/>
+      <line class="life" x1="890" y1="56" x2="890" y2="834"/>
+
+      <!-- step 00 -->
+      <rect class="band" x="10" y="72" width="980" height="22" rx="3"/>
+      <text class="band-t" x="20" y="87">00 PREREQ · 8 s · read-only</text>
+      <text class="num" x="52" y="122">1</text>
+      <path class="flow" d="M110,118 H488" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="122" y="112">az account show · set subscription</text>
+      <text class="num" x="52" y="154">2</text>
+      <path class="flow fabric" d="M110,150 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="144">GET /capacities → trial FTL4, West Europe, Active</text>
+      <text class="num" x="52" y="186">3</text>
+      <path class="flow local" d="M110,182 H298" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="122" y="176">SELECT @@VERSION (SQL 2025)</text>
+
+      <!-- step 01 -->
+      <rect class="band" x="10" y="198" width="980" height="22" rx="3"/>
+      <text class="band-t" x="20" y="213">01 AZURE · 32 s · all resources already existed, so create calls were skipped</text>
+      <text class="num" x="52" y="248">4</text>
+      <path class="flow azure" d="M110,244 H688" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="320" y="238">az: group create · server list · ad-admin · 2 firewall rules · db list</text>
+      <text class="num" x="52" y="280">5</text>
+      <path class="flow azure" d="M110,276 H688" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="320" y="270">T-SQL (Entra token): dbo.Customer + Jansen row, user fabric_reader</text>
+
+      <!-- step 02 -->
+      <rect class="band" x="10" y="292" width="980" height="22" rx="3"/>
+      <text class="band-t" x="20" y="307">02 LOCAL · 0 s</text>
+      <text class="num" x="52" y="342">6</text>
+      <path class="flow local" d="M110,338 H298" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="122" y="332">guarded create db/table, SELECT: 1 row</text>
+
+      <!-- step 03 -->
+      <rect class="band" x="10" y="354" width="980" height="22" rx="3"/>
+      <text class="band-t" x="20" y="369">03 FABRIC · 40 s</text>
+      <text class="num" x="52" y="404">7</text>
+      <path class="flow fabric" d="M110,400 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="394">POST /workspaces → 201 ws-fabricdemo</text>
+      <text class="num" x="52" y="436">8</text>
+      <path class="flow fabric" d="M110,432 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="426">POST …/assignToCapacity → 202</text>
+      <text class="num" x="52" y="468">9</text>
+      <path class="flow fabric" d="M110,464 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="458">POST /connections → 201 (SQL login fabric_reader to Azure SQL)</text>
+      <text class="num" x="46" y="500">10</text>
+      <path class="flow fabric" d="M110,496 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="490">POST …/warehouses → 202, long running 21 s → db1 + SQL endpoint</text>
+
+      <!-- step 04 -->
+      <rect class="band" x="10" y="512" width="980" height="22" rx="3"/>
+      <text class="band-t" x="20" y="527">04 LOAD · 74 s, of which the pipeline 61 s</text>
+      <text class="num" x="46" y="562">11</text>
+      <path class="flow fabric" d="M110,558 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="552">T-SQL: schemas stg + dwh, tables Customer_Azure / Customer_Local</text>
+      <text class="num" x="46" y="594">12</text>
+      <path class="flow azure" d="M688,590 H112" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="320" y="584">SELECT dbo.Customer → 1 row (Jansen, A)</text>
+      <text class="num" x="46" y="626">13</text>
+      <path class="flow fabric" d="M110,622 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="616">TRUNCATE + INSERT stg.Customer_Azure (1 row)</text>
+      <text class="num" x="46" y="658">14</text>
+      <path class="flow fabric" d="M110,654 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="648">pipeline pl_load_customers: update definition, start job, poll 61 s → Completed</text>
+      <text class="num" x="46" y="690">15</text>
+      <path class="flow local" d="M888,686 H302" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="330" y="680">gateway reads dbo.Customer (SQL login fabric_local_user), staging, loads stg.Customer_Local</text>
+
+      <!-- step 05 / 06 -->
+      <rect class="band" x="10" y="702" width="980" height="22" rx="3"/>
+      <text class="band-t" x="20" y="717">05 TRANSFORM · 6 s</text>
+      <text class="num" x="46" y="752">16</text>
+      <path class="flow fabric" d="M110,748 H888" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="742">05-Transform.sql: count staging (1 / 1), TRUNCATE + INSERT dwh.Customers</text>
+      <rect class="band" x="10" y="764" width="980" height="22" rx="3"/>
+      <text class="band-t" x="20" y="779">06 VERIFY · 2 s</text>
+      <text class="num" x="46" y="814">17</text>
+      <path class="flow fabric" d="M888,810 H112" marker-end="url(#arrow)"/>
+      <text class="sub halo" x="500" y="804">SELECT dwh.Customers → 2 rows, expected 2 → Verify OK</text>
+    </svg>
+    </div>
+    <figcaption>Not drawn: about 1 s token requests to az before every Fabric call and SQL statement (18 in the first run). Arrow 15 is the gateway: it runs on your PC, polls Fabric outbound, and reads the local database on behalf of the pipeline. Colours follow the target: blue Azure, green Fabric, orange local.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>Step by step, from the log</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Where</th><th>What</th><th>Values in this run</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr class="step"><td colspan="4">00-Prereq · 8 s</td></tr>
+        <tr><td class="loc">00-Prereq.ps1:19-25</td><td>az account show / set, read name and user</td><td>subscription from <code>config.ps1</code>, user <code>&lt;you&gt;@&lt;opendata.nl tenant&gt;</code></td><td><span class="pill ok">exit 0</span></td></tr>
+        <tr><td class="loc">00-Prereq.ps1:35</td><td>Fabric token for the Fabric tenant, <code>GET /v1/capacities</code></td><td>token selected with <code>--subscription &lt;fabric tenant id&gt;</code>; capacity <code>Trial-…</code> sku FTL4, West Europe, Active</td><td><span class="pill ok">200</span></td></tr>
+        <tr><td class="loc">00-Prereq.ps1:43</td><td><code>SELECT @@VERSION</code> on the local instance</td><td>server <code>localhost</code>, Windows auth; SQL Server 2025 Enterprise Developer</td><td><span class="pill ok">1 row</span></td></tr>
+        <tr><td class="loc">00-Prereq.ps1:30</td><td>Warning (first run only)</td><td><code>LocalConnectionId</code> was still empty</td><td><span class="pill warn">warn</span></td></tr>
+
+        <tr class="step"><td colspan="4">01-Azure · 32 s</td></tr>
+        <tr><td class="loc">01-Azure.ps1:9</td><td>Server name from subscription id</td><td><code>sql-fabricdemo-&lt;hash6&gt;</code>, hash = first 6 hex of SHA1(subscription id); fqdn <code>….database.windows.net</code></td><td><span class="pill ok">same name every run</span></td></tr>
+        <tr><td class="loc">01-Azure.ps1:12</td><td>Signed-in user (future Entra admin)</td><td>UPN and object id of the opendata.nl guest account</td><td><span class="pill ok">ok</span></td></tr>
+        <tr><td class="loc">01-Azure.ps1:18-22</td><td><code>az group create</code>, <code>az sql server list</code></td><td>RG <code>rg-fabricdemo</code>, <code>germanywestcentral</code>; server matches = 1</td><td><span class="pill">exists, create skipped</span></td></tr>
+        <tr><td class="loc">01-Azure.ps1:33</td><td><code>az sql server ad-admin create</code></td><td>Entra admin = the signed-in user. Not guarded: runs every time</td><td><span class="pill">17 s</span></td></tr>
+        <tr><td class="loc">01-Azure.ps1:38-41</td><td>Firewall rules</td><td><code>demo-client</code> = &lt;your public IP&gt; (single address); <code>AllowAzure</code> = 0.0.0.0 to 0.0.0.0</td><td><span class="pill ok">2 s each</span></td></tr>
+        <tr><td class="loc">01-Azure.ps1:46</td><td><code>az sql db list</code></td><td><code>db1</code> matches = 1</td><td><span class="pill">exists, create skipped</span></td></tr>
+        <tr><td class="loc">01-Azure.ps1:56</td><td>T-SQL: <code>dbo.Customer</code> + row (1, Jansen, A)</td><td>Entra token for <code>database.windows.net</code>, no tenant selector (default account)</td><td><span class="pill ok">0.2 s</span></td></tr>
+        <tr><td class="loc">01-Azure.ps1:67-72</td><td>Read-only login for Fabric</td><td><code>CREATE USER fabric_reader</code> (contained user), <code>db_datareader</code>; password generated and saved in <code>.secrets</code></td><td><span class="pill ok">ok</span></td></tr>
+
+        <tr class="step"><td colspan="4">02-Local · 0 s (first run) · 2 s (re-run with the SQL login)</td></tr>
+        <tr><td class="loc">02-Local.ps1:14-29</td><td>Guarded create of db, table, row; then SELECT</td><td>instance <code>localhost</code>, db <code>db1</code>, row (1, Pietersen, B)</td><td><span class="pill ok">1 row</span></td></tr>
+        <tr><td class="loc">02-Local.ps1:34-47</td><td>Read-only SQL login for the gateway (added after the first run)</td><td>mixed mode checked (<code>IsIntegratedSecurityOnly</code> = 0); <code>CREATE LOGIN fabric_local_user</code>, <code>CREATE USER</code> in db1, <code>db_datareader</code>; password saved as <code>localReaderPwd</code></td><td><span class="pill ok">ok</span></td></tr>
+
+        <tr class="step"><td colspan="4">03-Fabric · 40 s</td></tr>
+        <tr><td class="loc">03-Fabric.ps1:14-16</td><td>Find workspace by name, create when missing</td><td><code>ws-fabricdemo</code> not found → <code>POST /workspaces</code></td><td><span class="pill ok">201</span></td></tr>
+        <tr><td class="loc">03-Fabric.ps1:19-21</td><td>Assign workspace to the trial capacity</td><td>capacity looked up by name, <code>assignToCapacity</code></td><td><span class="pill ok">202</span></td></tr>
+        <tr><td class="loc">03-Fabric.ps1:32</td><td>Cloud connection to Azure SQL</td><td>name <code>conn-rg-fabricdemo-azuresql</code>, ShareableCloud, Basic auth <code>fabric_reader</code>, connection test enabled</td><td><span class="pill ok">201</span></td></tr>
+        <tr><td class="loc">03-Fabric.ps1:51-58</td><td>Create warehouse and read its SQL endpoint</td><td><code>POST /warehouses</code> → 202, operation polled ~21 s; then GET list and GET item for <code>connectionString</code></td><td><span class="pill ok">db1</span></td></tr>
+        <tr><td class="loc">03-Fabric.ps1:23,46,61,62</td><td>State file writes</td><td><code>workspaceId</code>, <code>azureConnId</code>, <code>warehouseId</code>, <code>warehouseServer</code></td><td><span class="pill ok">saved</span></td></tr>
+
+        <tr class="step"><td colspan="4">04-Load · 74 s (re-run with gateway connection)</td></tr>
+        <tr><td class="loc">04-Load.ps1:15</td><td>Schemas and staging tables in the warehouse</td><td><code>stg</code>, <code>dwh</code>, <code>stg.Customer_Azure</code>, <code>stg.Customer_Local</code>; token for <code>database.windows.net</code> from the Fabric tenant account</td><td><span class="pill">2 s</span></td></tr>
+        <tr><td class="loc">04-Load.ps1:54-60</td><td>Read Azure SQL, insert into the warehouse</td><td>1 row read; <code>VALUES (1, N'Jansen', N'A')</code>; <code>TRUNCATE</code> then <code>INSERT</code> into <code>stg.Customer_Azure</code></td><td><span class="pill ok">1 row</span></td></tr>
+        <tr><td class="loc">04-Load.ps1:66</td><td>Decision on the local copy</td><td><code>LocalConnectionId</code> = gateway connection <code>conn-local-sql</code> (SQL, <code>localhost;db1</code>, Basic) → run the pipeline</td><td><span class="pill ok">run</span></td></tr>
+        <tr><td class="loc">04-Load.ps1:81-88</td><td>Pipeline definition</td><td>one Copy activity <code>CopyLocal</code>: source <code>SqlServerSource</code> (query <code>SELECT CustomerId, LastName, Initials FROM dbo.Customer</code>, connection = gateway connection), sink <code>DataWarehouseSink</code> into <code>stg.Customer_Local</code> with <code>TRUNCATE</code> first, <code>enableStaging: true</code>; item <code>pl_load_customers</code> existed, so <code>updateDefinition</code></td><td><span class="pill ok">200</span></td></tr>
+        <tr><td class="loc">04-Load.ps1:96-101</td><td>Start the job, poll every 10 s</td><td><code>POST …/jobs/instances?jobType=Pipeline</code>; started 09:32:51 UTC, ended 09:33:52 UTC</td><td><span class="pill ok">Completed, 61 s</span></td></tr>
+
+        <tr class="step"><td colspan="4">05-Transform · 6 s</td></tr>
+        <tr><td class="loc">05-Transform.ps1:13</td><td>Staging counts before transform</td><td>Azure 1, Local 1</td><td><span class="pill ok">ok</span></td></tr>
+        <tr><td class="loc">05-Transform.ps1:14</td><td>Run <code>05-Transform.sql</code></td><td>create <code>dwh.Customers</code> if missing, <code>TRUNCATE</code>, <code>INSERT … SELECT</code> with <code>ROW_NUMBER()</code> key, <code>CONCAT(Initials, '. ', LastName)</code>, <code>SYSUTCDATETIME()</code></td><td><span class="pill ok">ok</span></td></tr>
+
+        <tr class="step"><td colspan="4">06-Verify · 2 s</td></tr>
+        <tr><td class="loc">06-Verify.ps1:10-16</td><td>Select and compare row count</td><td>expected 2 (local connection set), actual 2: AzureSQL / Jansen / A. Jansen and LocalSQL / Pietersen / B. Pietersen</td><td><span class="pill ok">Verify OK</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Identities and tokens</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Call</th><th>az command (token request)</th><th>Account used</th></tr></thead>
+      <tbody>
+        <tr><td class="loc">Azure resources</td><td><code>az group / sql … </code> (no explicit token)</td><td>opendata.nl guest account, selected subscription</td></tr>
+        <tr><td class="loc">Azure SQL T-SQL</td><td><code>get-access-token --resource https://database.windows.net/</code>, no <code>--subscription</code></td><td>opendata.nl account (default), Entra admin of the server</td></tr>
+        <tr><td class="loc">Fabric REST</td><td><code>get-access-token --resource https://api.fabric.microsoft.com --subscription &lt;fabric tenant id&gt;</code></td><td>tenant-level account of the onmicrosoft.com tenant</td></tr>
+        <tr><td class="loc">Warehouse T-SQL</td><td><code>get-access-token --resource https://database.windows.net/ --subscription &lt;fabric tenant id&gt;</code></td><td>same Fabric tenant account, token audience is the SQL endpoint</td></tr>
+        <tr><td class="loc">Local SQL (scripts)</td><td>no token</td><td>Windows authentication of the current user</td></tr>
+        <tr><td class="loc">Local SQL (gateway)</td><td>no token; credentials stored encrypted in the Fabric connection</td><td>SQL login <code>fabric_local_user</code>, read-only on db1. Windows authentication failed: the gateway service could not impersonate the user</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:10px;color:var(--muted)">Why <code>--subscription</code> and not <code>--tenant</code>: the Fabric account has no subscriptions, so the tenant id is passed as "subscription"; <code>--tenant</code> picked the wrong cached account.</p>
+</section>
+
+<section>
+  <h2>Things the log shows</h2>
+  <div class="cols">
+    <div class="note warn">
+      <h3>Three failures before the local copy worked</h3>
+      <p>(1) The warehouse COPY command refused the SQL Server source ("doesn't support 'Source connector type' as 'SqlServer'"): fixed with <code>enableStaging: true</code>. (2) The gateway could not impersonate the Windows user: switched to a SQL login. (3) The connection still held another user name (<code>fabric_local_user</code> vs the login first created as <code>fabric_local_reader</code>): the login was renamed to match. Each failed run took 20 to 60 s.</p>
+    </div>
+    <div class="note fa">
+      <h3>One row costs a minute</h3>
+      <p>The pipeline run took 61 s for a single row, against 0.03 s to read the same table over the Azure SQL path. The time is the pipeline, the gateway hop and staging, not the data. It matters if you ever schedule this.</p>
+    </div>
+    <div class="note">
+      <h3>18 token requests = about 18 s</h3>
+      <p>Each <code>Invoke-Fabric</code> and <code>Invoke-Sql</code> asks az again, about 1 s each (one took 2 s). Caching a token per resource for the run would save roughly 15 s of the 104 s.</p>
+    </div>
+    <div class="note">
+      <h3>Entra admin is set every run</h3>
+      <p><code>az sql server ad-admin create</code> takes 17 s and repeats although the server already exists. Guarding it with <code>ad-admin list</code> would remove half of step 01.</p>
+    </div>
+    <div class="note az">
+      <h3>Azure SQL vs warehouse latency</h3>
+      <p>The select on Azure SQL took 0.03 s; each warehouse statement took 2 to 5 s, and the first one 4.8 s. That is typical for the warehouse endpoint and the reason a one-row load stays in a script.</p>
+    </div>
+    <div class="note fa">
+      <h3>Warehouse creation is asynchronous</h3>
+      <p>The POST returns 202; the script polls the operation for about 21 s and then looks the warehouse up again. The operation URL pointed to a Switzerland North service host while the capacity is in West Europe: worth knowing if data residency matters.</p>
+    </div>
+    <div class="note fa">
+      <h3>Connection created, not used</h3>
+      <p>The Fabric connection with <code>fabric_reader</code> passed its connection test, but nothing uses it yet: the Azure row is loaded by the script. It is kept for a future pipeline and removed by cleanup. The gateway connection <code>conn-local-sql</code> is different: it is created by hand and is not removed by cleanup.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>State written by this run</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Key in <code>.secrets/state.json</code></th><th>Written by</th><th>Used by</th></tr></thead>
+      <tbody>
+        <tr><td class="loc">readerPwd</td><td>01-Azure.ps1:67 (generated once)</td><td>01 (CREATE USER), 03 (connection credentials)</td></tr>
+        <tr><td class="loc">localReaderPwd</td><td>02-Local.ps1:35 (generated once)</td><td>02 (CREATE / ALTER LOGIN), and typed by hand into the gateway connection in the portal</td></tr>
+        <tr><td class="loc">sqlFqdn</td><td>01-Azure.ps1:77</td><td>03, 04</td></tr>
+        <tr><td class="loc">workspaceId</td><td>03-Fabric.ps1:23</td><td>04, 99</td></tr>
+        <tr><td class="loc">azureConnId</td><td>03-Fabric.ps1:46</td><td>99 (delete connection)</td></tr>
+        <tr><td class="loc">warehouseId</td><td>03-Fabric.ps1:61</td><td>04 (pipeline sink)</td></tr>
+        <tr><td class="loc">warehouseServer</td><td>03-Fabric.ps1:62</td><td>04, 05, 06</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:10px;color:var(--muted)">Passwords, tokens, tenant and subscription ids, user names, the public IP and the server hash are left out of this page on purpose. The log they come from stays in the git-ignored <code>logs/</code> folder.</p>
+</section>
+
+</main>
+</body>
+</html>
